@@ -4,7 +4,7 @@ import bcrypt from "bcrypt"
 
 const userSchema = new Schema(
     {
-        usename: {
+        username: {
             type: String,
             required: true,
             unique: true,
@@ -38,7 +38,7 @@ const userSchema = new Schema(
                 ref: "Video"
             }
         ],
-        passwords: {
+        password: {
             type: String,
             required: [true, "Password is required"]
         },
@@ -52,14 +52,14 @@ const userSchema = new Schema(
 )
 
 userSchema.pre("save", async function (next) {
-    if(!this.isModified("passwords")) return next();
+    if(!this.isModified("password")) return next();
 
-    this.passwords = await bcrypt.hash(this.passwords, 10)
+    this.password = await bcrypt.hash(this.password, 10)
     next()
 })
 
 userSchema.methods.isPasswordCorrect = async function (Password){
-    return await bcrypt.compare(Password, this.passwords)
+    return await bcrypt.compare(Password, this.password)
 }
 
 userSchema.methods.generateAccessToken = function(){
