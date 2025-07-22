@@ -170,7 +170,7 @@ const LogoutUser = asyncHandler(async(req, res) => {
 })
 
 const refreshAccessToken = asyncHandler(async(req, res) => {
-    const incomingRefreshToken = req.cookie.refreshToken || req.body.refreshToken
+    const incomingRefreshToken = req.cookies.refreshToken || req.body.refreshToken
     
         if(!incomingRefreshToken){
             throw new ApiError(401, "unauthorize request")
@@ -203,7 +203,7 @@ const refreshAccessToken = asyncHandler(async(req, res) => {
         return res
         .status(200)
         .cookie("accessToken", accessToken)
-        .cookie("refresh token", newrefreshToken)
+        .cookie("refreshToken", newrefreshToken)
         .json(
             new ApiResponse(
                 200,
@@ -225,9 +225,9 @@ const changeCurrentPassword = asyncHandler(async(req, res) => {
     // }
 
     const user = await User.findById(req.user?._id)
-    await user.isPasswordCorrect(oldPassword)
+    const isPasswordValid = await user.isPasswordCorrect(oldPassword)
    
-    if(!isPasswordCorrect){
+    if(!isPasswordValid){
         throw new ApiError(400, "Invalid old password")
     }
     
@@ -362,8 +362,13 @@ const getUserChannelProfile = asyncHandler(async(req, res) => {
                         $size: "$subscribedTo"
                     },
                     isSubscribed: {
-                        $condition: {
-                            if: {$in: [req.user?._id, "subscribers.subscriber"]},
+                        $cond: {
+                            if: {
+                                $in: [
+                                req?.user._id, 
+                                {$ifNull: ["$subscribers.subscriber", [] ] },
+                            ],
+                        },
                             then: true,
                             else: false
                         }
