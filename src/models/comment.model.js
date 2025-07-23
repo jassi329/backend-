@@ -13,7 +13,7 @@ const commentSchema = new Schema(
         },
         owner: {
             type: Schema.Types.ObjectId,
-            ref: ""
+            ref: "User"
         }
     }, {
         timestamps:true
