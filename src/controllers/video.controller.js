@@ -120,3 +120,81 @@ const getAllVideos = asyncHandler(async(req, res) => {
         )
     }
 })
+
+const publishAVideo = asyncHandler(async(req, res) => {
+    const {title, description} = req.body
+
+    if(!title || title.trim() === ""){
+        throw new ApiError(400, "Title is required")
+    }
+    if(!description || description.trim() === ""){
+        throw new ApiError(400, "description is required")
+    }
+
+    const videoFileLocalPath = req.files?.videoFile?.[0]?.path;
+    const thumbnailLocalPath = req.files.thumbnail?.[0]?.path;
+
+    if(!videoFileLocalPath){
+        throw new ApiError(400, "Video file is required")
+    }
+    if(!thumbnailLocalPath){
+        throw new ApiError(400, "thumbnail is required")
+    }
+
+    const videoFile = await uploadOnCloudinary(videoFileLocalPath);
+    const thumbnail = await uploadOnCloudinary(thumbnailLocalPath)
+
+    if(!videoFile?.url){
+        throw new ApiError(500, "Failed to upload video file on cloudinary")
+    }
+    if(!thumbnail?.url){
+        if(videoFile?.public_id){
+            await deleteFromCloudinary(videoFile.public_id, "video")
+        }
+        throw new ApiError(500, "failed to upload thumbnail on cloudinary")
+    }
+
+    const duration = videoFile.duration || 0;
+
+    const video = await Video.create(
+        {
+            title, 
+            description,
+            videoFile: videoFile.url,
+            thumbnail: thumbnail,url,
+            duration,
+            owner: req.user?._id,
+            isPublished: true
+        }
+    )
+
+    if(!video){
+        //if video creation fails, deleting it from cloudinary
+        if(videoFile?.public_id){
+            await deleteFromCloudinary(videoFile.public_id, "video")
+        }
+        if(thumbnail?.public_id){
+            await deleteFromCloudinary(thumbnail.public_id, "image")
+        }
+        throw new ApiError(500, "failed to publish video");
+    }
+
+    //video is finally created 
+    const createdVideo = await Video.findById(video._id).populate(
+        "owner",
+        "username fullname avatar"
+    )
+
+    return res
+        .status(200)
+        .json(
+            new ApiResponse(201, createdVideo, "videpo Published Successfully")
+        )
+})
+
+
+export {
+    getAllVideos,
+    publishAVideo
+
+}
