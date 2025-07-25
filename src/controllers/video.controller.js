@@ -343,11 +343,98 @@ const updateVideo = asyncHandler(async(req, res) => {
     }
 })
 
+const deleteVideo = asyncHandler(async(req, res) => {
+
+    const { videoId } = req.params
+
+    if(!isValidObjectId(videoId)){
+        throw new ApiError(400, "Invalid video ID")
+    }
+
+    const video = await Video.findById(videoId)
+
+    if(!video){
+        throw new ApiError(404, "Video not found")
+    }
+
+    //check if authenticated user is the owner of the video
+    if(video.owner.toString() !== req.user?._id.toString()){
+        throw new ApiError(403, "you are not authorized to delete this video")
+    }
+
+    const videoFilePublicId = video.videoFile.split("/").pop().split(".")[0]
+    const thumbnailPublicId = video.thumbnail.split("/").pop().split(".")[0]
+
+    if(videoFilePublicId){
+        await deleteFromCloudinary(videoFilePublicId, "video")
+    }
+
+    if(thumbnailPublicId){
+        await deleteFromCloudinary(thumbnailPublicId, "image")
+    }
+
+    const deletedVideo = await Video.findByIdAndDelete(videoId)
+
+    if(!deletedVideo){
+        throw new ApiError(500, "failed to delete video from database")
+    }
+
+    await Comment.deleteMany({ video: videoId})
+
+    await User.updateMany(
+        { watchHistory: videoId },
+        { $pull: {watchHistory: videoId}}
+    )
+
+    await Like.deleteMany({ video: videoId })
+
+    return res
+        .status(200)
+        .json(
+            new ApiResponse(200, null, "Video deleted successfully")
+        )
+})
+
+const togglePublishStatus = asyncHandler(async(req, res) => {
+
+    const { videoId } = req.params
+
+    if(!isValidObjectId(videoId)){
+        throw new ApiError(400, "Invalid object ID")
+    }
+
+    const video = await Video.findById(videoId)
+
+    if(!video){
+        throw new ApiError(404, "Video not found")
+    }
+
+    if(video.owner.toString() !== req.user?._id.toString()){
+        throw new ApiError(403, "you are not authorized to change the video's publish status")
+    }
+    
+    video.isPublished = !video.isPublished
+
+    await video.save({validateBeforeSave: false})
+
+    return res  
+        .status(200)
+        .json(
+            new ApiResponse(
+                200, 
+                {isPublished: video.isPublished},
+                "video publish status toggle successfully"
+            )
+        )
+})
+
 
 export {
     getAllVideos,
     publishAVideo,
     getVideoById,
-    updateVideo
+    updateVideo,
+    deleteVideo,
+    togglePublishStatus
 
 }
