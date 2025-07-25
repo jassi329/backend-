@@ -192,9 +192,162 @@ const publishAVideo = asyncHandler(async(req, res) => {
         )
 })
 
+//controller to get single video by its id
+const getVideoById = asyncHandler(async(req, res) => {
+
+    const { videoId } = req.params
+
+    if(!isValidObjectId(videoId)){
+        throw new ApiError(400, "Invalid video ID")
+    }
+
+    // Aggregate to find the video and populate its owner's details
+    const video = await Video.aggregate([
+        {
+            $match: {
+                _id: new mongoose.Types.ObjectId(videoId)
+            }
+        },
+        {
+            $lookup: {
+                from: "users",
+                localField: "owner",
+                foreignField: "_id",
+                as: "owner",
+                pipeline: [
+                    {
+                        $project: {
+                            username: 1, 
+                            fullname: 1, 
+                            avatar: 1,
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            $addFields: {
+                owner: {$first: "$owner"},
+                isLiked: {
+                    $cond: {
+                        if: { $in: [req.user?._id, "$likes.likedBy"]},
+                        then: true,
+                        else: false
+                    }
+                }
+            }
+        },
+        {
+            $project: {
+                videoFile: 1,
+                thumbnail: 1,
+                title: 1, 
+                description: 1,
+                duration: 1,
+                views: 1,
+                isPublished: 1,
+                owner: 1,
+                createdAt: 1,
+                updatedAt: 1,
+                isLiked: 1
+            }
+        }
+    ])
+
+    //checking if video is found
+    if(!video || video.length === 0){
+        throw new ApiError(404, "Video not found")
+    }
+
+    const videoFound = video[0]
+
+    if(req.user && videoFound.owner?._id.toString() !== req.user._id.toString()){
+        await Video.findByIdAndUpdate(
+            videoId,
+            { $inc: { views: 1 }}, //incrementing views by 1
+            { new: true }//return the updated document
+        )
+    }
+
+    //add video to authenticated user's watch history
+    if(req.user){
+        await User.findByIdAndUpdate(
+            req.user._id,
+            {
+                $addToSet: {
+                    watchHistory: videoId
+                }
+            },
+            { new: true }
+        )
+    }
+
+    return res
+        .status(200)
+        .json(
+            new ApiResponse(200, videoFound, "Video fetched successfully")
+        )
+})
+
+const updateVideo = asyncHandler(async(req, res) => {
+
+    const { videoId } = req.params
+
+    const {title, description} = req.body
+
+    if(!isValidObjectId(videoId)){
+        throw new ApiError(400, "Invalid video ID")
+    }
+
+    if(!title && !description && !req.files && (!req.files || !req.files.thumbnail)){
+        throw new ApiError(400, "At least one field is required for update")
+    }
+
+    const video = await Video.findById(videoId)
+
+    if(!video){
+        throw new ApiError(404, "Video not found")
+    }
+
+    if(video.owner.toString() !== req.user?._id.toString()){
+        throw new ApiError(403, "You are not authorized to update this video")
+    }
+
+    let newThumbnailUrl = video.thumbnail
+
+    if(req.file?.path){
+        const oldThumbnailPublicId = video.thumbnail.split("/").pop().split(".")[0]
+        if(oldThumbnailPublicId){
+            await deleteFromCloudinary(oldThumbnailPublicId, "image")
+        }
+
+        const uploadedThumbnail = new uploadOnCloudinary(req.file.path)
+        if(!uploadedThumbnail?.url){
+            throw new ApiError(500, "failed to upload new thumbnail")
+        }
+        newThumbnailUrl = uploadedThumbnail.url
+    }
+
+    else if(req.files?.thumbnail?.[0]?.path){
+        const oldThumbnailPublicId = video.thumbnail.split("/").pop().split(".")[0]
+        if(oldThumbnailPublicId){
+            await deleteFromCloudinary(oldThumbnailPublicId, "image")
+        }
+
+        const uploadedThumbnail = await uploadOnCloudinary(req.files.thumbnail[0].path)
+        if(!uploadedThumbnail?.url){
+            throw new ApiError(500, "failed to upload new thumbnail")
+        }
+
+        newThumbnailUrl = uploadedThumbnail.url
+    }
+})
+
 
 export {
     getAllVideos,
-    publishAVideo
+    publishAVideo,
+    getVideoById,
+    updateVideo
 
 }
