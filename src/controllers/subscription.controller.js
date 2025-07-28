@@ -114,8 +114,60 @@ const getUserChannelSubscribers = asyncHandler(async(req, res) => {
         ))
 })
 
+const getSubscribedChannel = asyncHandler(async(req, res) => {
+
+    const { subscriberId } = req.params
+
+    if(isValidObjectId(subscriberId)){
+        throw new ApiError(400, "invalid subscriber ID")
+    }
+
+    const subscriber = await User.findById(subscriberId)
+    if(!subscriber){
+        throw new ApiError(404, "Subscriber not found")
+    }
+
+    const subscribedChannels = await Subscription.aggregate([
+        {
+            $match: {
+                from: "users",
+                localField: "channels",
+                foreignField: "_id",
+                as: "channelInfo",
+                pipeline: [
+                    {
+                        $project: {
+                            username: 1,
+                            fullname: 1,
+                            avatar: 1,
+                            email: 1
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            $unwind: "$channelInfo"
+        },
+        {
+            $replaceRoot: { newRoot: "$channelInfo"}
+        }
+    ])
+
+    return res
+        .status(200)
+        .json(
+            new ApiResponse(
+                200,
+                subscribedChannels,
+                "Subscribed Channels fetched successfully"
+            )
+        )
+})
+
 
 export {
     toogleSubscription,
     getUserChannelSubscribers,
+    getSubscribedChannel
 }
